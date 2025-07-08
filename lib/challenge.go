@@ -83,7 +83,8 @@ func (s *Scraper) solveClassicJSChallenge(originalURL *url.URL, body string) (*h
 }
 
 func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string) (*http.Response, error) {
-	answer, err := solveV2Logic(body, resp.Request.URL.Host, s.jsEngine, s.logger)
+	// --- CHANGE: Pass the full URL object (resp.Request.URL) instead of just the host. ---
+	answer, err := solveV2Logic(body, resp.Request.URL, s.jsEngine, s.logger)
 	if err != nil {
 		return nil, fmt.Errorf("v2 challenge solver failed: %w", err)
 	}
