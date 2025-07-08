@@ -57,7 +57,7 @@ func New(opts ...ScraperOption) (*Scraper, error) {
 			RandomizeHeaders: true,
 			BrowserQuirks:    true,
 		},
-		JSRuntime: js.Otto, // Default to the built-in engine
+		JSRuntime: js.Goja, // --- CHANGE: Default to Goja ---
 	}
 
 	for _, opt := range opts {
@@ -93,15 +93,21 @@ func New(opts ...ScraperOption) (*Scraper, error) {
 		logger = log.New(io.Discard, "", 0)
 	}
 
+	// --- CHANGE: Logic to handle Otto->Goja transition ---
 	var jsEngine js.Engine
+	if options.JSRuntime == js.Otto {
+		logger.Println("Warning: The 'otto' JS runtime is deprecated and has been replaced by 'goja' for better performance and compatibility. The 'goja' engine will be used automatically. Please update your code to use `WithJSRuntime(js.Goja)` to remove this warning.")
+		options.JSRuntime = js.Goja
+	}
+
 	switch options.JSRuntime {
 	case js.Node, js.Deno, js.Bun:
 		jsEngine, err = js.NewExternalEngine(string(options.JSRuntime))
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize JS runtime: %w", err)
 		}
-	case js.Otto, "": // Default to otto
-		jsEngine = js.NewOttoEngine()
+	case js.Goja, "": // Default to goja
+		jsEngine = js.NewGojaEngine()
 	default:
 		return nil, fmt.Errorf("unsupported JS runtime: %s", options.JSRuntime)
 	}
@@ -113,7 +119,7 @@ func New(opts ...ScraperOption) (*Scraper, error) {
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
-			Timeout: 30 * time.Second, // Add a default timeout
+			Timeout: 30 * time.Second,
 		},
 		opts:             options,
 		UserAgent:        agent,

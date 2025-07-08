@@ -27,7 +27,7 @@ type Options struct {
 		BanTime  time.Duration
 	}
 	Stealth   stealth.Options
-	JSRuntime js.Runtime // "otto", "node", "deno", "bun"
+	JSRuntime js.Runtime // "goja", "node", "deno", "bun"
 	Logger    *log.Logger
 }
 
@@ -81,8 +81,9 @@ func WithDelay(d time.Duration) ScraperOption {
 }
 
 // WithJSRuntime sets the JavaScript runtime to use for solving challenges.
-// Supported values are js.Otto (default), js.Node, js.Deno, js.Bun.
+// Supported values are js.Goja (default), js.Node, js.Deno, js.Bun.
 // The selected runtime must be available in the system's PATH.
+// Using the deprecated js.Otto will automatically select js.Goja and log a warning.
 func WithJSRuntime(runtime js.Runtime) ScraperOption {
 	return func(o *Options) {
 		o.JSRuntime = runtime
