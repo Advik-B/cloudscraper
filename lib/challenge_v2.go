@@ -2,11 +2,12 @@ package cloudscraper
 
 import (
 	"fmt"
-	"github.com/Advik-B/cloudscraper/lib/js"
 	"log"
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/Advik-B/cloudscraper/lib/js"
 )
 
 var v2ScriptRegex = regexp.MustCompile(`(?s)<script[^>]*?>(.*?)</script>`)
@@ -29,23 +30,28 @@ func solveV2Logic(body string, pageURL *url.URL, engine js.Engine, logger *log.L
 	}
 
 	if gojaEngine, ok := engine.(*js.GojaEngine); ok {
-		// Pass the full URL to the goja solver so it can also generate the correct shim.
 		return gojaEngine.SolveV2Challenge(body, pageURL, challengeScripts, logger)
 	}
 
+	// This is now the entry point for all external engines.
 	return solveV2WithExternal(pageURL, challengeScripts, engine)
 }
 
 func solveV2WithExternal(pageURL *url.URL, scriptMatches [][]string, engine js.Engine) (string, error) {
-	// Generate the shim from our unified template.
-	setupScript, err := js.GenerateShim(pageURL)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate JS shim: %w", err)
+	var fullScript strings.Builder
+
+	// --- THE CORE FIX ---
+	// Only generate and prepend our custom shim if the engine is NOT node.
+	// The node engine uses JSDOM, which is its own, complete shim.
+	if extEngine, ok := engine.(*js.ExternalEngine); !ok || extEngine.Command != "node" {
+		setupScript, err := js.GenerateShim(pageURL)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate JS shim: %w", err)
+		}
+		fullScript.WriteString(setupScript)
 	}
 
-	var fullScript strings.Builder
-	fullScript.WriteString(setupScript)
-
+	// Concatenate the raw challenge scripts.
 	for _, match := range scriptMatches {
 		if len(match) > 1 {
 			scriptContent := match[1]
@@ -55,17 +61,19 @@ func solveV2WithExternal(pageURL *url.URL, scriptMatches [][]string, engine js.E
 		}
 	}
 
+	// Append the answer extractor, which is needed by all engines.
 	answerExtractor := `
         setTimeout(function() {
             try {
                 var answer = document.getElementById('jschl-answer').value;
                 console.log(answer);
             } catch (e) {
-                // Ignore errors if the element isn't found.
+                console.log(""); // Log empty string on failure to prevent hanging
             }
         }, 4100);
     `
 	fullScript.WriteString(answerExtractor)
 
-	return engine.Run(fullScript.String())
+	// Pass the final script and the real pageURL to the engine.
+	return engine.Run(fullScript.String(), pageURL, "")
 }
