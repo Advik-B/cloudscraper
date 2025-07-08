@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Advik-B/cloudscraper/lib/errors"
@@ -12,7 +11,7 @@ import (
 	"github.com/dop251/goja_nodejs/eventloop"
 )
 
-// GojaEngine uses the embedded goja interpreter.
+// GojaEngine uses the embedded goja interpreter with a Node.js-style event loop.
 type GojaEngine struct{}
 
 // NewGojaEngine creates a new engine that uses the built-in goja interpreter.
@@ -20,47 +19,59 @@ func NewGojaEngine() *GojaEngine {
 	return &GojaEngine{}
 }
 
-// Run executes a script in goja. It uses an event loop to support async operations like setTimeout.
+// Run executes a script in goja using an event loop to support async operations like setTimeout.
 func (e *GojaEngine) Run(script string) (string, error) {
+	// --- CHANGE: Use goja_nodejs event loop for a cleaner implementation ---
 	loop := eventloop.NewEventLoop()
+
 	var result string
 	var scriptErr error
-	var wg sync.WaitGroup
-	wg.Add(1)
+	var program *goja.Program
+
+	// First, compile the script.
+	program, err := goja.Compile("challenge-script", script, true)
+	if err != nil {
+		return "", fmt.Errorf("goja: failed to compile script: %w", err)
+	}
+
+	// Use a channel to signal completion.
+	done := make(chan struct{})
 
 	loop.Run(func(vm *goja.Runtime) {
+		// Ensure we signal completion even on panic.
+		defer func() {
+			if r := recover(); r != nil {
+				scriptErr = fmt.Errorf("goja: script panicked: %v", r)
+			}
+			close(done)
+		}()
+
 		// Set up console.log to capture the result.
 		_ = vm.Set("console", map[string]interface{}{
 			"log": func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) > 0 {
 					result = call.Argument(0).String()
 				}
-				// The script might be finished, let's signal the wait group.
-				// We also set a short timeout to exit if the script doesn't explicitly.
-				time.AfterFunc(100*time.Millisecond, wg.Done)
+				// The script has produced its result, we can stop the loop.
+				loop.Stop()
 				return vm.ToValue(nil)
 			},
 		})
 
-		// Run the script.
-		_, err := vm.RunString(script)
+		// Execute the compiled script.
+		_, err := vm.RunProgram(program)
 		if err != nil {
 			scriptErr = err
-			wg.Done()
 		}
 	})
 
-	// Wait for the script to finish or for a timeout.
-	waitChan := make(chan struct{})
-	go func() {
-		defer close(waitChan)
-		wg.Wait()
-	}()
-
+	// Wait for the event loop to finish or for a timeout.
 	select {
-	case <-waitChan:
-		// Script finished normally.
+	case <-done:
+		// Event loop finished.
 	case <-time.After(10 * time.Second):
+		loop.Stop() // Attempt to stop the loop.
+		<-done      // Wait for it to actually stop.
 		return "", errors.ErrChallengeTimeout
 	}
 
@@ -73,9 +84,7 @@ func (e *GojaEngine) Run(script string) (string, error) {
 
 // SolveV2Challenge is now deprecated in favor of the unified Run method,
 // as goja's event loop can handle the asynchronous challenge script directly.
-// This function is kept for API compatibility but simply delegates.
-func (e *GojaEngine) SolveV2Challenge(body string, pageURL *url.URL, scriptMatches [][]string, _ any) (string, error) {
-	// Generate the shim from our unified template.
+func (e *GojaEngine) SolveV2Challenge(_ string, pageURL *url.URL, scriptMatches [][]string, _ any) (string, error) {
 	setupScript, err := GenerateShim(pageURL)
 	if err != nil {
 		return "", fmt.Errorf("goja: failed to generate JS shim: %w", err)
@@ -93,7 +102,6 @@ func (e *GojaEngine) SolveV2Challenge(body string, pageURL *url.URL, scriptMatch
 		}
 	}
 
-	// The answer extractor is now the only way for the script to signal it's done.
 	answerExtractor := `
         setTimeout(function() {
             try {

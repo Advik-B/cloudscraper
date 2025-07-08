@@ -21,3 +21,9 @@ const (
 	// Bun uses the external Bun runtime.
 	Bun Runtime = "bun"
 )
+
+// Custom allows using a custom JavaScript runtime by specifying its path.
+// Warning: This is unsafe because you're executing arbitrary code.
+func CustomRuntime(path string) Runtime {
+	return Runtime(path)
+}
