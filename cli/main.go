@@ -13,12 +13,13 @@ func main() {
 	// Enable debug logging to see the library's operations.
 	logger := log.New(os.Stdout, "cloudscraper: ", log.LstdFlags)
 
-	logger.Println("Attempting to create a scraper that uses external Node.js...")
+	const jsRuntime = js.Node
+	logger.Println("Attempting to create a scraper that uses", jsRuntime)
 
 	// Create a new scraper instance, specifically configuring it to use "node".
 	// The library will automatically find the 'node' executable in your system's PATH.
 	sc, err := cloudscraper.New(
-		cloudscraper.WithJSRuntime(js.Node),
+		cloudscraper.WithJSRuntime(jsRuntime),
 		cloudscraper.WithLogger(logger),
 	)
 	if err != nil {
@@ -28,8 +29,7 @@ func main() {
 
 	logger.Println("Scraper created successfully. Making request...")
 
-	// A site known to be protected by Cloudflare's JS challenge
-	targetURL := "https://nowsecure.nl"
+	targetURL := "https://www.crunchbase.com/organization/openai"
 
 	// Make a GET request
 	resp, err := sc.Get(targetURL)
@@ -56,7 +56,7 @@ func main() {
 	logger.Println("----------------")
 
 	if resp.StatusCode == 200 {
-		logger.Println("\nSuccess! Cloudflare challenge was bypassed using Node.js.")
+		logger.Println("\nSuccess! Cloudflare challenge was bypassed using ", jsRuntime)
 	} else {
 		logger.Printf("\nFailed to bypass challenge. Received status code: %d\n", resp.StatusCode)
 	}
