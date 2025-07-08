@@ -36,5 +36,5 @@ func solveV1Logic(body, domain string, engine js.Engine) (string, error) {
         console.log(result);
     `, domain, finalExpression)
 
-	return engine.Run(fullScript)
+	return engine.Run(fullScript, nil, body)
 }
