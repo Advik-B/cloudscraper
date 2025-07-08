@@ -27,65 +27,22 @@ func NewExternalEngine(command string) (*ExternalEngine, error) {
 	return &ExternalEngine{Command: command}, nil
 }
 
-// Run executes a script. For 'node', it uses a jsdom bootstrap script for a full browser environment.
+// Run executes a script. For 'node', it uses the embedded jsdom bundle.
 func (e *ExternalEngine) Run(script string) (string, error) {
 	var cmd *exec.Cmd
 
-	// --- CHANGE: Use JSDOM for the Node.js runtime ---
+	// --- CHANGE: Use the embedded and extracted JSDOM bundle for Node.js ---
 	if e.Command == "node" {
-		// This script initializes jsdom, injects the challenge script, and listens for the result.
-		// It expects the challenge script to be passed as the first argument.
-		bootstrapScript := `
-			const { JSDOM } = require('jsdom');
-			const scriptToRun = process.argv[1];
+		bootstrapPath, err := GetNodeBundlePath()
+		if err != nil {
+			return "", fmt.Errorf("could not prepare embedded node environment: %w", err)
+		}
 
-			if (!scriptToRun) {
-				console.error("No script provided to jsdom bootstrap.");
-				process.exit(1);
-			}
-
-			const dom = new JSDOM('<body></body>', {
-				url: "https://nowsecure.nl/", // A placeholder, the actual URL is set within the script via location obj
-				runScripts: "dangerously",   // We must allow the script to execute
-				pretendToBeVisual: true,     // Helps with things like requestAnimationFrame
-			});
-			
-			const window = dom.window;
-			const document = window.document;
-
-			// Redirect console.log to stdout to capture the answer
-			window.console.log = (data) => {
-				process.stdout.write(String(data));
-				// Give a moment for stdout to flush before exiting
-				setTimeout(() => process.exit(0), 50);
-			};
-			
-			// Handle uncaught exceptions
-			window.addEventListener('error', (event) => {
-  				console.error('Script Error:', event.error);
-				process.exit(1);
-			});
-
-			try {
-				// The provided script will define location, navigator, etc.
-				// and then run the challenge logic.
-				window.eval(scriptToRun);
-			} catch (e) {
-				console.error('Eval Error:', e);
-				process.exit(1);
-			}
-
-			// Timeout if the script doesn't call console.log
-			setTimeout(() => {
-				// console.error("JSDOM execution timed out.");
-				process.exit(0); // Exit gracefully so we can get partial results if any
-			}, 10000);
-		`
-		// Pass our full script (shim + challenge) as an argument to the node bootstrap script.
-		cmd = exec.Command(e.Command, "-e", bootstrapScript, "--", script)
-
+		cmd = exec.Command(e.Command, bootstrapPath)
+		// We pipe the full script (shim + challenge) to the bootstrap script's stdin.
+		cmd.Stdin = strings.NewReader(script)
 	} else {
-		// Other runtimes (deno, bun) will use the previous stdin method.
+		// Other runtimes (deno, bun) will continue to use the direct stdin method.
 		cmd = exec.Command(e.Command)
 		cmd.Stdin = strings.NewReader(script)
 	}
@@ -96,12 +53,7 @@ func (e *ExternalEngine) Run(script string) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		// jsdom with exit code 0 is a success, even if it looks like an error to Go.
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 0 {
-			// It's a success.
-		} else {
-			return "", fmt.Errorf("external js runtime '%s' failed: %w. Stderr: %s", e.Command, err, stderr.String())
-		}
+		return "", fmt.Errorf("external js runtime '%s' failed: %w. Stderr: %s", e.Command, err, stderr.String())
 	}
 
 	return strings.TrimSpace(stdout.String()), nil
