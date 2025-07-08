@@ -209,7 +209,7 @@ func (s *Scraper) do(req *http.Request) (*http.Response, error) {
 	}
 	resp.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
 
-	if isChallengeResponse(resp, bodyBytes) {
+	if IsChallengeResponse(resp, bodyBytes) {
 		s.logger.Println("Cloudflare protection detected, attempting to bypass...")
 		return s.handleChallenge(resp)
 	}
