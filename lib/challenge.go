@@ -156,7 +156,7 @@ func (s *Scraper) extractRValue(body string) string {
 	return ""
 }
 
-func isChallengeResponse(resp *http.Response, body []byte) bool {
+func IsChallengeResponse(resp *http.Response, body []byte) bool {
 	if !strings.HasPrefix(resp.Header.Get("Server"), "cloudflare") {
 		return false
 	}
