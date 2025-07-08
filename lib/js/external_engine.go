@@ -3,6 +3,7 @@ package js
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strings"
 )
@@ -28,23 +29,30 @@ func NewExternalEngine(command string) (*ExternalEngine, error) {
 }
 
 // Run executes a script. For 'node', it uses the embedded jsdom bundle.
-func (e *ExternalEngine) Run(script string) (string, error) {
+func (e *ExternalEngine) Run(script string, pageURL *url.URL, htmlBody string) (string, error) {
 	var cmd *exec.Cmd
 
-	// --- CHANGE: Use the embedded and extracted JSDOM bundle for Node.js ---
 	if e.Command == "node" {
 		bootstrapPath, err := GetNodeBundlePath()
 		if err != nil {
 			return "", fmt.Errorf("could not prepare embedded node environment: %w", err)
 		}
-
-		cmd = exec.Command(e.Command, bootstrapPath)
-		// We pipe the full script (shim + challenge) to the bootstrap script's stdin.
-		cmd.Stdin = strings.NewReader(script)
+		if pageURL == nil {
+			return "", fmt.Errorf("node engine requires a pageURL, but got nil")
+		}
+		// Pass bootstrap path, URL, and the script itself as arguments
+		cmd = exec.Command(e.Command, bootstrapPath, pageURL.String(), script)
+		// Pipe the full HTML of the challenge page to the bootstrap script's stdin
+		cmd.Stdin = strings.NewReader(htmlBody)
 	} else {
-		// Other runtimes (deno, bun) will continue to use the direct stdin method.
+		// Other engines still get the full script via stdin
+		fullPayload := script
+		if !strings.Contains(script, "global.location") { // Basic check if shim is missing
+			shim, _ := GenerateShim(pageURL)
+			fullPayload = shim + script
+		}
 		cmd = exec.Command(e.Command)
-		cmd.Stdin = strings.NewReader(script)
+		cmd.Stdin = strings.NewReader(fullPayload)
 	}
 
 	var stdout, stderr bytes.Buffer
