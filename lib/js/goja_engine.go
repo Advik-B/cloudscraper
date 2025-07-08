@@ -3,7 +3,6 @@ package js
 import (
 	"fmt"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/Advik-B/cloudscraper/lib/errors"
@@ -20,7 +19,7 @@ func NewGojaEngine() *GojaEngine {
 }
 
 // Run executes a script in goja using an event loop to support async operations like setTimeout.
-func (e *GojaEngine) Run(script string) (string, error) {
+func (e *GojaEngine) Run(script string, _ *url.URL, body string) (string, error) {
 	// --- CHANGE: Use goja_nodejs event loop for a cleaner implementation ---
 	loop := eventloop.NewEventLoop()
 
@@ -80,39 +79,4 @@ func (e *GojaEngine) Run(script string) (string, error) {
 	}
 
 	return result, nil
-}
-
-// SolveV2Challenge is now deprecated in favor of the unified Run method,
-// as goja's event loop can handle the asynchronous challenge script directly.
-func (e *GojaEngine) SolveV2Challenge(_ string, pageURL *url.URL, scriptMatches [][]string, _ any) (string, error) {
-	setupScript, err := GenerateShim(pageURL)
-	if err != nil {
-		return "", fmt.Errorf("goja: failed to generate JS shim: %w", err)
-	}
-
-	var fullScript strings.Builder
-	fullScript.WriteString(setupScript)
-
-	for _, match := range scriptMatches {
-		if len(match) > 1 {
-			scriptContent := match[1]
-			scriptContent = strings.ReplaceAll(scriptContent, `document.getElementById('challenge-form');`, "({})")
-			fullScript.WriteString(scriptContent)
-			fullScript.WriteString(";\n")
-		}
-	}
-
-	answerExtractor := `
-        setTimeout(function() {
-            try {
-                var answer = document.getElementById('jschl-answer').value;
-                console.log(answer);
-            } catch (e) {
-                console.log(""); // Log empty string on failure to prevent hanging
-            }
-        }, 4100);
-    `
-	fullScript.WriteString(answerExtractor)
-
-	return e.Run(fullScript.String())
 }
