@@ -29,11 +29,7 @@ func solveV2Logic(body string, pageURL *url.URL, engine js.Engine, logger *log.L
 		return "", fmt.Errorf("could not find the primary Cloudflare JS challenge script")
 	}
 
-	if gojaEngine, ok := engine.(*js.GojaEngine); ok {
-		return gojaEngine.SolveV2Challenge(body, pageURL, challengeScripts, logger)
-	}
-
-	// This is now the entry point for all external engines.
+	// Use the external solving approach for all engines now
 	return solveV2WithExternal(pageURL, challengeScripts, engine)
 }
 
