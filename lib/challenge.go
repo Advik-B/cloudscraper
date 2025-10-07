@@ -17,8 +17,8 @@ var (
 	jsV2DetectRegex    = regexp.MustCompile(`(?i)/cdn-cgi/challenge-platform/`)
 	captchaDetectRegex = regexp.MustCompile(`data-sitekey="([^\"]+)"`)
 	challengeFormRegex = regexp.MustCompile(`(?i)<form[^>]*?(?:class\s*=\s*"[^"]*challenge-form[^"]*"|id\s*=\s*"[^"]*challenge-form[^"]*")[^>]*?action\s*=\s*"([^"]+)"[^>]*?>`)
-	jschlVcRegex       = regexp.MustCompile(`(?i)name="jschl_vc"\s+value="([^"]+)"`)
-	passRegex          = regexp.MustCompile(`(?i)name="pass"\s+value="([^"]+)"`)
+	jschlVcRegex       = regexp.MustCompile(`(?i)name\s*=\s*"jschl_vc"\s+value\s*=\s*"([^"]+)"`)
+	passRegex          = regexp.MustCompile(`(?i)name\s*=\s*"pass"\s+value\s*=\s*"([^"]+)"`)
 )
 
 func (s *Scraper) handleChallenge(resp *http.Response) (*http.Response, error) {
@@ -149,7 +149,7 @@ func (s *Scraper) submitChallengeForm(submitURL, refererURL string, formData url
 }
 
 func (s *Scraper) extractRValue(body string) string {
-	rValMatch := regexp.MustCompile(`(?i)name="r"\s+value="([^"]+)"`).FindStringSubmatch(body)
+	rValMatch := regexp.MustCompile(`(?i)name\s*=\s*"r"\s+value\s*=\s*"([^"]+)"`).FindStringSubmatch(body)
 	if len(rValMatch) > 1 {
 		return rValMatch[1]
 	}
