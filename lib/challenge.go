@@ -88,10 +88,20 @@ func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string) (*htt
 		return nil, fmt.Errorf("v2 challenge solver failed: %w", err)
 	}
 
+	// Try to find the challenge form (old style)
 	formMatch := challengeFormRegex.FindStringSubmatch(body)
-	if len(formMatch) < 2 {
-		return nil, fmt.Errorf("v2: could not find challenge form")
+	var submitURL string
+	
+	if len(formMatch) >= 2 {
+		// Old style: form exists in HTML
+		fullSubmitURL, _ := resp.Request.URL.Parse(formMatch[1])
+		submitURL = fullSubmitURL.String()
+	} else {
+		// New style: form is created dynamically by JavaScript
+		// Use the standard modern challenge submission URL pattern
+		submitURL = s.buildModernSubmitURL(resp.Request.URL)
 	}
+	
 	vcMatch := jschlVcRegex.FindStringSubmatch(body)
 	if len(vcMatch) < 2 {
 		// v2 challenges sometimes don't have a jschl_vc. This is okay.
@@ -99,10 +109,10 @@ func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string) (*htt
 	}
 	passMatch := passRegex.FindStringSubmatch(body)
 	if len(passMatch) < 2 {
-		return nil, fmt.Errorf("v2: could not find pass")
+		// Modern challenges may not have a pass field either
+		passMatch = []string{"", ""}
 	}
 
-	fullSubmitURL, _ := resp.Request.URL.Parse(formMatch[1])
 	formData := url.Values{
 		"r":            {s.extractRValue(body)},
 		"jschl_vc":     {vcMatch[1]},
@@ -110,7 +120,7 @@ func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string) (*htt
 		"jschl_answer": {answer},
 	}
 
-	return s.submitChallengeForm(fullSubmitURL.String(), resp.Request.URL.String(), formData)
+	return s.submitChallengeForm(submitURL, resp.Request.URL.String(), formData)
 }
 
 func (s *Scraper) solveCaptchaChallenge(resp *http.Response, body, siteKey string) (*http.Response, error) {
@@ -148,11 +158,29 @@ func (s *Scraper) submitChallengeForm(submitURL, refererURL string, formData url
 }
 
 func (s *Scraper) extractRValue(body string) string {
+	// First try the old format: name="r" value="..."
 	rValMatch := regexp.MustCompile(`name="r" value="([^"]+)"`).FindStringSubmatch(body)
 	if len(rValMatch) > 1 {
 		return rValMatch[1]
 	}
+	
+	// Try the modern format: r:'...' in __CF$cv$params
+	rParamsMatch := regexp.MustCompile(`r:\s*'([^']+)'`).FindStringSubmatch(body)
+	if len(rParamsMatch) > 1 {
+		return rParamsMatch[1]
+	}
+	
 	return ""
+}
+
+func (s *Scraper) buildModernSubmitURL(originalURL *url.URL) string {
+	// Modern Cloudflare challenges use a standard submission URL pattern
+	// when the form is not present in the HTML.
+	// The most common pattern is /cdn-cgi/challenge-platform/h/b/orchestrate/jsch/v1
+	// but this may vary. This method returns the most common pattern.
+	submitPath := "/cdn-cgi/challenge-platform/h/b/orchestrate/jsch/v1"
+	submitURL, _ := originalURL.Parse(submitPath)
+	return submitURL.String()
 }
 
 func isChallengeResponse(resp *http.Response, body []byte) bool {
