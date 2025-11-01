@@ -149,11 +149,18 @@ func (s *Scraper) solveCaptchaChallenge(resp *http.Response, body, siteKey strin
 		return nil, fmt.Errorf("captcha solver failed: %w", err)
 	}
 
+	// Note: Captcha challenges currently require a form element in the HTML.
+	// If modern captcha challenges also use dynamic forms, this will need the same
+	// flexible detection logic as solveModernJSChallenge (see issue #2 fix).
 	formMatch := challengeFormRegex.FindStringSubmatch(body)
 	if len(formMatch) < 2 {
 		return nil, fmt.Errorf("captcha: could not find challenge form")
 	}
-	submitURL, _ := resp.Request.URL.Parse(formMatch[1])
+	submitURL, err := resp.Request.URL.Parse(formMatch[1])
+	if err != nil {
+		s.logger.Printf("Warning: failed to parse captcha form action URL %q: %v", formMatch[1], err)
+		return nil, fmt.Errorf("captcha: invalid form action URL: %w", err)
+	}
 
 	formData := url.Values{
 		"r":                     {s.extractRValue(body)},
