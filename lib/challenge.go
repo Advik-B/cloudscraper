@@ -12,6 +12,12 @@ import (
 	"github.com/Advik-B/cloudscraper/lib/errors"
 )
 
+const (
+	// modernChallengeSubmitPath is the standard submission URL path for modern Cloudflare challenges
+	// when the form element is not present in the HTML
+	modernChallengeSubmitPath = "/cdn-cgi/challenge-platform/h/b/orchestrate/jsch/v1"
+)
+
 var (
 	jsV1DetectRegex    = regexp.MustCompile(`(?i)cdn-cgi/images/trace/jsch/`)
 	jsV2DetectRegex    = regexp.MustCompile(`(?i)/cdn-cgi/challenge-platform/`)
@@ -102,21 +108,23 @@ func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string) (*htt
 		submitURL = s.buildModernSubmitURL(resp.Request.URL)
 	}
 	
+	// Extract optional fields that may not be present in modern challenges
+	var jschlVc, pass string
+	
 	vcMatch := jschlVcRegex.FindStringSubmatch(body)
-	if len(vcMatch) < 2 {
-		// v2 challenges sometimes don't have a jschl_vc. This is okay.
-		vcMatch = []string{"", ""}
+	if len(vcMatch) >= 2 {
+		jschlVc = vcMatch[1]
 	}
+	
 	passMatch := passRegex.FindStringSubmatch(body)
-	if len(passMatch) < 2 {
-		// Modern challenges may not have a pass field either
-		passMatch = []string{"", ""}
+	if len(passMatch) >= 2 {
+		pass = passMatch[1]
 	}
 
 	formData := url.Values{
 		"r":            {s.extractRValue(body)},
-		"jschl_vc":     {vcMatch[1]},
-		"pass":         {passMatch[1]},
+		"jschl_vc":     {jschlVc},
+		"pass":         {pass},
 		"jschl_answer": {answer},
 	}
 
@@ -176,10 +184,13 @@ func (s *Scraper) extractRValue(body string) string {
 func (s *Scraper) buildModernSubmitURL(originalURL *url.URL) string {
 	// Modern Cloudflare challenges use a standard submission URL pattern
 	// when the form is not present in the HTML.
-	// The most common pattern is /cdn-cgi/challenge-platform/h/b/orchestrate/jsch/v1
-	// but this may vary. This method returns the most common pattern.
-	submitPath := "/cdn-cgi/challenge-platform/h/b/orchestrate/jsch/v1"
-	submitURL, _ := originalURL.Parse(submitPath)
+	submitURL, err := originalURL.Parse(modernChallengeSubmitPath)
+	if err != nil {
+		// This should rarely happen with a relative path, but log it for debugging
+		s.logger.Printf("Warning: failed to parse modern challenge submit URL: %v", err)
+		// Fall back to constructing the URL manually
+		return originalURL.Scheme + "://" + originalURL.Host + modernChallengeSubmitPath
+	}
 	return submitURL.String()
 }
 
