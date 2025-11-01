@@ -100,6 +100,8 @@ func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string) (*htt
 	
 	if len(formMatch) >= 2 {
 		// Old style: form exists in HTML
+		// Parse errors are safe to ignore here because formMatch[1] comes from HTML
+		// and should always be a valid relative or absolute URL
 		fullSubmitURL, _ := resp.Request.URL.Parse(formMatch[1])
 		submitURL = fullSubmitURL.String()
 	} else {
@@ -187,7 +189,7 @@ func (s *Scraper) buildModernSubmitURL(originalURL *url.URL) string {
 	submitURL, err := originalURL.Parse(modernChallengeSubmitPath)
 	if err != nil {
 		// This should rarely happen with a relative path, but log it for debugging
-		s.logger.Printf("Warning: failed to parse modern challenge submit URL: %v", err)
+		s.logger.Printf("Warning: failed to parse modern challenge submit URL path %q: %v", modernChallengeSubmitPath, err)
 		// Fall back to constructing the URL manually
 		return originalURL.Scheme + "://" + originalURL.Host + modernChallengeSubmitPath
 	}
