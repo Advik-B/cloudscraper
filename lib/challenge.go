@@ -25,6 +25,8 @@ var (
 	challengeFormRegex = regexp.MustCompile(`<form class="challenge-form" id="challenge-form" action="(.+?)" method="POST">`)
 	jschlVcRegex       = regexp.MustCompile(`name="jschl_vc" value="(\w+)"`)
 	passRegex          = regexp.MustCompile(`name="pass" value="(.+?)"`)
+	rValueOldRegex     = regexp.MustCompile(`name="r" value="([^"]+)"`)
+	rValueModernRegex  = regexp.MustCompile(`r:\s*'([^']+)'`)
 )
 
 func (s *Scraper) handleChallenge(resp *http.Response) (*http.Response, error) {
@@ -100,10 +102,14 @@ func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string) (*htt
 	
 	if len(formMatch) >= 2 {
 		// Old style: form exists in HTML
-		// Parse errors are safe to ignore here because formMatch[1] comes from HTML
-		// and should always be a valid relative or absolute URL
-		fullSubmitURL, _ := resp.Request.URL.Parse(formMatch[1])
-		submitURL = fullSubmitURL.String()
+		fullSubmitURL, err := resp.Request.URL.Parse(formMatch[1])
+		if err != nil {
+			// Log the error but continue - we'll try the fallback URL construction
+			s.logger.Printf("Warning: failed to parse form action URL %q: %v", formMatch[1], err)
+			submitURL = s.buildModernSubmitURL(resp.Request.URL)
+		} else {
+			submitURL = fullSubmitURL.String()
+		}
 	} else {
 		// New style: form is created dynamically by JavaScript
 		// Use the standard modern challenge submission URL pattern
@@ -169,13 +175,13 @@ func (s *Scraper) submitChallengeForm(submitURL, refererURL string, formData url
 
 func (s *Scraper) extractRValue(body string) string {
 	// First try the old format: name="r" value="..."
-	rValMatch := regexp.MustCompile(`name="r" value="([^"]+)"`).FindStringSubmatch(body)
+	rValMatch := rValueOldRegex.FindStringSubmatch(body)
 	if len(rValMatch) > 1 {
 		return rValMatch[1]
 	}
 	
 	// Try the modern format: r:'...' in __CF$cv$params
-	rParamsMatch := regexp.MustCompile(`r:\s*'([^']+)'`).FindStringSubmatch(body)
+	rParamsMatch := rValueModernRegex.FindStringSubmatch(body)
 	if len(rParamsMatch) > 1 {
 		return rParamsMatch[1]
 	}
