@@ -26,9 +26,10 @@ type Options struct {
 		Strategy proxy.Strategy
 		BanTime  time.Duration
 	}
-	Stealth   stealth.Options
-	JSRuntime js.Runtime // "otto", "node", "deno", "bun"
-	Logger    *log.Logger
+	Stealth       stealth.Options
+	JSRuntime     js.Runtime // "goja", "otto", "node", "deno", "bun"
+	CustomJSEngine js.Engine  // Custom JS engine implementation (overrides JSRuntime if set)
+	Logger        *log.Logger
 }
 
 // ScraperOption configures a Scraper.
@@ -81,11 +82,21 @@ func WithDelay(d time.Duration) ScraperOption {
 }
 
 // WithJSRuntime sets the JavaScript runtime to use for solving challenges.
-// Supported values are js.Otto (default), js.Node, js.Deno, js.Bun.
-// The selected runtime must be available in the system's PATH.
+// Supported values are js.Goja (default, recommended), js.Otto (deprecated), js.Node, js.Deno, js.Bun.
+// Note: js.Otto is deprecated and will use js.Goja internally with a warning for backwards compatibility.
+// The selected runtime must be available in the system's PATH for external runtimes.
 func WithJSRuntime(runtime js.Runtime) ScraperOption {
 	return func(o *Options) {
 		o.JSRuntime = runtime
+	}
+}
+
+// WithCustomJSEngine sets a custom JavaScript engine implementation.
+// This overrides the JSRuntime setting and allows you to provide your own engine.
+// The engine must implement the js.Engine interface.
+func WithCustomJSEngine(engine js.Engine) ScraperOption {
+	return func(o *Options) {
+		o.CustomJSEngine = engine
 	}
 }
 

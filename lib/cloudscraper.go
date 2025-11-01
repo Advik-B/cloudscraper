@@ -94,16 +94,27 @@ func New(opts ...ScraperOption) (*Scraper, error) {
 	}
 
 	var jsEngine js.Engine
-	switch options.JSRuntime {
-	case js.Node, js.Deno, js.Bun:
-		jsEngine, err = js.NewExternalEngine(string(options.JSRuntime))
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize JS runtime: %w", err)
+	
+	// Check if a custom engine was provided
+	if options.CustomJSEngine != nil {
+		jsEngine = options.CustomJSEngine
+	} else {
+		// Use the configured runtime or default to Goja
+		switch options.JSRuntime {
+		case js.Node, js.Deno, js.Bun:
+			jsEngine, err = js.NewExternalEngine(string(options.JSRuntime))
+			if err != nil {
+				return nil, fmt.Errorf("failed to initialize JS runtime: %w", err)
+			}
+		case js.Otto:
+			// Otto is deprecated - use Goja instead with a warning
+			logger.Println("WARNING: js.Otto is deprecated and will be removed in a future version. Using js.Goja instead. Please update your code to use js.Goja explicitly.")
+			jsEngine = js.NewGojaEngine()
+		case js.Goja, "": // Default to Goja
+			jsEngine = js.NewGojaEngine()
+		default:
+			return nil, fmt.Errorf("unsupported JS runtime: %s", options.JSRuntime)
 		}
-	case js.Otto, "": // Default to otto
-		jsEngine = js.NewOttoEngine()
-	default:
-		return nil, fmt.Errorf("unsupported JS runtime: %s", options.JSRuntime)
 	}
 
 	s := &Scraper{
