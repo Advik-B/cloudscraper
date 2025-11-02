@@ -10,5 +10,4 @@ var (
 	ErrNoCaptchaSolver    = errors.New("captcha provider not configured")
 	ErrAllProxiesBanned   = errors.New("all proxies are currently banned")
 	ErrMaxRetriesExceeded = errors.New("failed after max retries")
-	ErrExecutionTimeout   = errors.New("otto: execution timed out")
 )

@@ -57,7 +57,7 @@ func New(opts ...ScraperOption) (*Scraper, error) {
 			RandomizeHeaders: true,
 			BrowserQuirks:    true,
 		},
-		JSRuntime: js.Otto, // Default to the built-in engine
+		JSRuntime: js.Goja, // Default to the built-in Goja engine
 	}
 
 	for _, opt := range opts {
@@ -106,10 +106,6 @@ func New(opts ...ScraperOption) (*Scraper, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to initialize JS runtime: %w", err)
 			}
-		case js.Otto:
-			// Otto is deprecated - use Goja instead with a warning
-			logger.Println("WARNING: js.Otto is deprecated and will be removed in a future version. Using js.Goja instead. Please update your code to use js.Goja explicitly.")
-			jsEngine = js.NewGojaEngine()
 		case js.Goja, "": // Default to Goja
 			jsEngine = js.NewGojaEngine()
 		default:

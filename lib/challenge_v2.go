@@ -19,9 +19,9 @@ func solveV2Logic(body, domain string, engine js.Engine, logger *log.Logger) (st
 		return "", fmt.Errorf("could not find modern JS challenge scripts")
 	}
 
-	// Use a special synchronous path for Otto, which can't handle async setTimeout.
-	if ottoEngine, ok := engine.(*js.OttoEngine); ok {
-		return ottoEngine.SolveV2Challenge(body, domain, scriptMatches, logger)
+	// Use a special synchronous path for Goja, which can't handle async setTimeout.
+	if gojaEngine, ok := engine.(*js.GojaEngine); ok {
+		return gojaEngine.SolveV2Challenge(body, domain, scriptMatches, logger)
 	}
 
 	// Use a modern asynchronous path for external runtimes (node, deno, bun).

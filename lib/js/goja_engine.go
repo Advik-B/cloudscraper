@@ -10,6 +10,11 @@ import (
 	"github.com/dop251/goja"
 )
 
+// Create a Simulated Browser Environment (DOM Shim)
+//
+//go:embed setup.js
+var setupScript string
+
 // GojaEngine uses the embedded goja interpreter.
 type GojaEngine struct{}
 

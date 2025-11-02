@@ -12,9 +12,6 @@ type Runtime string
 const (
 	// Goja is the built-in Go-based interpreter (default, recommended).
 	Goja Runtime = "goja"
-	// Otto is the legacy built-in Go-based interpreter (deprecated, use Goja instead).
-	// For backwards compatibility, Otto requests are redirected to Goja with a warning.
-	Otto Runtime = "otto"
 	// Node uses the external Node.js runtime.
 	Node Runtime = "node"
 	// Deno uses the external Deno runtime.
