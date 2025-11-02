@@ -10,8 +10,8 @@ type Engine interface {
 type Runtime string
 
 const (
-	// Otto is the built-in Go-based interpreter.
-	Otto Runtime = "otto"
+	// Goja is the built-in Go-based interpreter (default, recommended).
+	Goja Runtime = "goja"
 	// Node uses the external Node.js runtime.
 	Node Runtime = "node"
 	// Deno uses the external Deno runtime.
