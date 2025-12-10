@@ -18,7 +18,8 @@ const (
 )
 
 // sanitizeDomainForJS ensures the domain string is safe to use in JavaScript context
-// by escaping special characters that could break out of string literals or URLs.
+// by filtering out potentially dangerous characters using a strict whitelist approach.
+// Only alphanumeric characters, dots, hyphens, and colons (for port numbers) are allowed.
 func sanitizeDomainForJS(domain string) string {
 	// Only allow alphanumeric, dots, hyphens, and colons (for port numbers)
 	// This is a strict whitelist to prevent injection attacks

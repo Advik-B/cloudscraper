@@ -21,6 +21,8 @@ func sanitizeDomain(domain string) string {
 	domain = strings.ReplaceAll(domain, `\`, `\\`)
 	// Escape single quotes to prevent breaking out of string literals
 	domain = strings.ReplaceAll(domain, `'`, `\'`)
+	// Escape double quotes to prevent breaking out of double-quoted string literals
+	domain = strings.ReplaceAll(domain, `"`, `\"`)
 	// Escape newlines and other control characters
 	domain = strings.ReplaceAll(domain, "\n", `\n`)
 	domain = strings.ReplaceAll(domain, "\r", `\r`)
