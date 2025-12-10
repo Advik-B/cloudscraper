@@ -69,11 +69,8 @@ func solveV2WithExternal(domain string, scriptMatches [][]string, engine js.Engi
 	// Security: Sanitize domain to prevent injection
 	safeDomain := sanitizeDomainForJS(domain)
 	if safeDomain == "" {
-		return "", fmt.Errorf("invalid domain after sanitization: domain '%s' contains only filtered characters or is empty", domain)
-	}
-	if safeDomain != domain {
-		// Log the difference for debugging purposes if needed in production
-		// For now, we proceed silently as this is expected for domains with special chars
+		// Don't expose the original domain in error message for security
+		return "", fmt.Errorf("invalid domain: contains only filtered characters or is empty")
 	}
 
 	// This DOM shim is required for the challenge script to run in a non-browser environment.
