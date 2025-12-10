@@ -5,7 +5,7 @@ import "strings"
 // SanitizeDomain ensures the domain string is safe to use in JavaScript context
 // by escaping special characters that could break out of string literals.
 func SanitizeDomain(domain string) string {
-// Replace backslash first to prevent double-escaping
+// Replace backslash first to prevent double-escaping of subsequent escape sequences
 domain = strings.ReplaceAll(domain, `\`, `\\`)
 // Escape single quotes to prevent breaking out of string literals
 domain = strings.ReplaceAll(domain, `'`, `\'`)
@@ -21,8 +21,10 @@ return domain
 // SanitizeDomainForJS ensures the domain string is safe to use in JavaScript context
 // by filtering out potentially dangerous characters using a strict whitelist approach.
 // Only alphanumeric characters, dots, hyphens, and colons (for port numbers) are allowed.
-// Note: This may filter out underscores and internationalized domain names (IDN).
-// For most Cloudflare challenges, standard ASCII domain names are expected.
+//
+// Security Trade-off: This strict filtering sacrifices some legitimate domain support
+// (e.g., underscores, internationalized domain names) for enhanced security against
+// injection attacks. For most Cloudflare challenges, standard ASCII domain names are expected.
 func SanitizeDomainForJS(domain string) string {
 // Only allow alphanumeric, dots, hyphens, and colons (for port numbers)
 // This is a strict whitelist to prevent injection attacks
