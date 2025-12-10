@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Advik-B/cloudscraper/lib/js"
+	"github.com/Advik-B/cloudscraper/lib/security"
 )
 
 // Regex to find and extract the modern challenge script content.
@@ -17,6 +18,11 @@ func solveV2Logic(body, domain string, engine js.Engine, logger *log.Logger) (st
 	scriptMatches := v2ScriptRegex.FindAllStringSubmatch(body, -1)
 	if len(scriptMatches) == 0 {
 		return "", fmt.Errorf("could not find modern JS challenge scripts")
+	}
+
+	// Security: Check total script size to prevent DoS
+	if err := security.ValidateTotalScriptSize(scriptMatches, security.MaxChallengeScriptSize); err != nil {
+		return "", err
 	}
 
 	// Use a special synchronous path for Goja, which can't handle async setTimeout.
@@ -30,6 +36,13 @@ func solveV2Logic(body, domain string, engine js.Engine, logger *log.Logger) (st
 
 // solveV2WithExternal builds a full script with shims and an async callback to solve the challenge.
 func solveV2WithExternal(domain string, scriptMatches [][]string, engine js.Engine) (string, error) {
+	// Security: Sanitize domain to prevent injection
+	safeDomain := security.SanitizeDomainForJS(domain)
+	if safeDomain == "" {
+		// Don't expose the original domain in error message for security
+		return "", fmt.Errorf("invalid domain: contains only filtered characters or is empty")
+	}
+
 	// This DOM shim is required for the challenge script to run in a non-browser environment.
 	atobImpl := `
         var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
@@ -57,7 +70,7 @@ func solveV2WithExternal(domain string, scriptMatches [][]string, engine js.Engi
 			},
 			createElement: function(tag) {
 				return {
-					firstChild: { href: "https://` + domain + `/" }
+					firstChild: { href: "https://` + safeDomain + `/" }
 				};
 			},
 			cookie: ""

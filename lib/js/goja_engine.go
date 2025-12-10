@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Advik-B/cloudscraper/lib/security"
 	"github.com/dop251/goja"
 )
 
@@ -25,6 +26,11 @@ func NewGojaEngine() *GojaEngine {
 
 // Run executes a script in goja. It captures output by overriding console.log.
 func (e *GojaEngine) Run(script string) (string, error) {
+	// Security: Check script size to prevent DoS attacks
+	if err := security.ValidateScriptSize(script, security.MaxGojaScriptSize); err != nil {
+		return "", err
+	}
+
 	vm := goja.New()
 	var result string
 
@@ -75,6 +81,11 @@ func (e *GojaEngine) Run(script string) (string, error) {
 // SolveV2Challenge uses the original synchronous method to solve v2 challenges,
 // as goja does not support asynchronous operations like setTimeout without additional setup.
 func (e *GojaEngine) SolveV2Challenge(body, domain string, scriptMatches [][]string, logger *log.Logger) (string, error) {
+	// Security: Check total script size
+	if err := security.ValidateTotalScriptSize(scriptMatches, security.MaxGojaScriptSize); err != nil {
+		return "", fmt.Errorf("goja: %w", err)
+	}
+
 	vm := goja.New()
 
 	// Security: Running setup script in VM.

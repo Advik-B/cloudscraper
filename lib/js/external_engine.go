@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/Advik-B/cloudscraper/lib/security"
 )
 
 // ExternalEngine uses an external command-line JS runtime (node, deno, bun).
@@ -31,6 +33,11 @@ func NewExternalEngine(command string) (*ExternalEngine, error) {
 
 // Run executes a script by piping it to the external runtime's stdin.
 func (e *ExternalEngine) Run(script string) (string, error) {
+	// Security: Check script size to prevent DoS attacks
+	if err := security.ValidateScriptSize(script, security.MaxExternalScriptSize); err != nil {
+		return "", err
+	}
+
 	// Security: The `e.Command` field is sanitized in the constructor (NewExternalEngine),
 	// making this call safe from command injection.
 	cmd := exec.Command(e.Command)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/Advik-B/cloudscraper/lib/errors"
 	"github.com/Advik-B/cloudscraper/lib/js"
+	"github.com/Advik-B/cloudscraper/lib/security"
 )
 
 var (
@@ -28,13 +29,16 @@ func solveV1Logic(body, domain string, engine js.Engine) (string, error) {
 	// finalExpression is the core calculation, e.g., `(+((!![]+!![]...))) + t.length`
 	finalExpression := passMatches[1]
 
+	// Security: Sanitize domain to prevent injection attacks
+	safeDomain := security.SanitizeDomain(domain)
+
 	// Create a self-contained script that can be executed by any JS runtime.
 	// It prints the final answer to stdout, which is captured by the engine.
 	fullScript := fmt.Sprintf(`
         var t = '%s';
         var result = (%s).toFixed(10);
         console.log(result);
-    `, domain, finalExpression)
+    `, safeDomain, finalExpression)
 
 	return engine.Run(fullScript)
 }
