@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+const (
+	// Maximum script size to prevent DoS attacks (5MB)
+	maxExternalScriptSize = 5 * 1024 * 1024
+)
+
 // ExternalEngine uses an external command-line JS runtime (node, deno, bun).
 type ExternalEngine struct {
 	Command string
@@ -31,6 +36,11 @@ func NewExternalEngine(command string) (*ExternalEngine, error) {
 
 // Run executes a script by piping it to the external runtime's stdin.
 func (e *ExternalEngine) Run(script string) (string, error) {
+	// Security: Check script size to prevent DoS attacks
+	if len(script) > maxExternalScriptSize {
+		return "", fmt.Errorf("script size exceeds maximum allowed size (%d bytes)", maxExternalScriptSize)
+	}
+
 	// Security: The `e.Command` field is sanitized in the constructor (NewExternalEngine),
 	// making this call safe from command injection.
 	cmd := exec.Command(e.Command)

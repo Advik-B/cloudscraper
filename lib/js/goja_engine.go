@@ -10,6 +10,11 @@ import (
 	"github.com/dop251/goja"
 )
 
+const (
+	// Maximum script size to prevent DoS attacks (5MB)
+	maxGojaScriptSize = 5 * 1024 * 1024
+)
+
 // Create a Simulated Browser Environment (DOM Shim)
 //
 //go:embed setup.js
@@ -25,6 +30,11 @@ func NewGojaEngine() *GojaEngine {
 
 // Run executes a script in goja. It captures output by overriding console.log.
 func (e *GojaEngine) Run(script string) (string, error) {
+	// Security: Check script size to prevent DoS attacks
+	if len(script) > maxGojaScriptSize {
+		return "", fmt.Errorf("script size exceeds maximum allowed size (%d bytes)", maxGojaScriptSize)
+	}
+
 	vm := goja.New()
 	var result string
 
@@ -75,6 +85,17 @@ func (e *GojaEngine) Run(script string) (string, error) {
 // SolveV2Challenge uses the original synchronous method to solve v2 challenges,
 // as goja does not support asynchronous operations like setTimeout without additional setup.
 func (e *GojaEngine) SolveV2Challenge(body, domain string, scriptMatches [][]string, logger *log.Logger) (string, error) {
+	// Security: Check total script size
+	totalSize := 0
+	for _, match := range scriptMatches {
+		if len(match) > 1 {
+			totalSize += len(match[1])
+		}
+	}
+	if totalSize > maxGojaScriptSize {
+		return "", fmt.Errorf("goja: total script size exceeds maximum allowed size (%d bytes)", maxGojaScriptSize)
+	}
+
 	vm := goja.New()
 
 	// Security: Running setup script in VM.

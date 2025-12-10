@@ -12,11 +12,44 @@ import (
 // Regex to find and extract the modern challenge script content.
 var v2ScriptRegex = regexp.MustCompile(`(?s)<script[^>]*>(.*?window\._cf_chl_opt.*?)<\/script>`)
 
+const (
+	// Maximum size for scripts to prevent DoS attacks (1MB)
+	maxScriptSize = 1024 * 1024
+)
+
+// sanitizeDomainForJS ensures the domain string is safe to use in JavaScript context
+// by escaping special characters that could break out of string literals or URLs.
+func sanitizeDomainForJS(domain string) string {
+	// Only allow alphanumeric, dots, hyphens, and colons (for port numbers)
+	// This is a strict whitelist to prevent injection attacks
+	var result strings.Builder
+	for _, char := range domain {
+		if (char >= 'a' && char <= 'z') ||
+			(char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') ||
+			char == '.' || char == '-' || char == ':' {
+			result.WriteRune(char)
+		}
+	}
+	return result.String()
+}
+
 // solveV2Logic solves modern v2/v3 challenges by delegating to the appropriate JS engine implementation.
 func solveV2Logic(body, domain string, engine js.Engine, logger *log.Logger) (string, error) {
 	scriptMatches := v2ScriptRegex.FindAllStringSubmatch(body, -1)
 	if len(scriptMatches) == 0 {
 		return "", fmt.Errorf("could not find modern JS challenge scripts")
+	}
+
+	// Security: Check total script size to prevent DoS
+	totalSize := 0
+	for _, match := range scriptMatches {
+		if len(match) > 1 {
+			totalSize += len(match[1])
+		}
+	}
+	if totalSize > maxScriptSize {
+		return "", fmt.Errorf("challenge script size exceeds maximum allowed size (%d bytes)", maxScriptSize)
 	}
 
 	// Use a special synchronous path for Goja, which can't handle async setTimeout.
@@ -30,6 +63,12 @@ func solveV2Logic(body, domain string, engine js.Engine, logger *log.Logger) (st
 
 // solveV2WithExternal builds a full script with shims and an async callback to solve the challenge.
 func solveV2WithExternal(domain string, scriptMatches [][]string, engine js.Engine) (string, error) {
+	// Security: Sanitize domain to prevent injection
+	safeDomain := sanitizeDomainForJS(domain)
+	if safeDomain == "" {
+		return "", fmt.Errorf("invalid domain after sanitization")
+	}
+
 	// This DOM shim is required for the challenge script to run in a non-browser environment.
 	atobImpl := `
         var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
@@ -57,7 +96,7 @@ func solveV2WithExternal(domain string, scriptMatches [][]string, engine js.Engi
 			},
 			createElement: function(tag) {
 				return {
-					firstChild: { href: "https://` + domain + `/" }
+					firstChild: { href: "https://` + safeDomain + `/" }
 				};
 			},
 			cookie: ""
