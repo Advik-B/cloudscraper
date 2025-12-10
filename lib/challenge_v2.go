@@ -20,6 +20,8 @@ const (
 // sanitizeDomainForJS ensures the domain string is safe to use in JavaScript context
 // by filtering out potentially dangerous characters using a strict whitelist approach.
 // Only alphanumeric characters, dots, hyphens, and colons (for port numbers) are allowed.
+// Note: This may filter out underscores and internationalized domain names (IDN).
+// For most Cloudflare challenges, standard ASCII domain names are expected.
 func sanitizeDomainForJS(domain string) string {
 	// Only allow alphanumeric, dots, hyphens, and colons (for port numbers)
 	// This is a strict whitelist to prevent injection attacks
@@ -67,7 +69,11 @@ func solveV2WithExternal(domain string, scriptMatches [][]string, engine js.Engi
 	// Security: Sanitize domain to prevent injection
 	safeDomain := sanitizeDomainForJS(domain)
 	if safeDomain == "" {
-		return "", fmt.Errorf("invalid domain after sanitization")
+		return "", fmt.Errorf("invalid domain after sanitization: domain '%s' contains only filtered characters or is empty", domain)
+	}
+	if safeDomain != domain {
+		// Log the difference for debugging purposes if needed in production
+		// For now, we proceed silently as this is expected for domains with special chars
 	}
 
 	// This DOM shim is required for the challenge script to run in a non-browser environment.
