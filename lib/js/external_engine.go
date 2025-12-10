@@ -5,11 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-)
 
-const (
-	// Maximum script size to prevent DoS attacks (5MB)
-	maxExternalScriptSize = 5 * 1024 * 1024
+	"github.com/Advik-B/cloudscraper/lib/security"
 )
 
 // ExternalEngine uses an external command-line JS runtime (node, deno, bun).
@@ -37,8 +34,8 @@ func NewExternalEngine(command string) (*ExternalEngine, error) {
 // Run executes a script by piping it to the external runtime's stdin.
 func (e *ExternalEngine) Run(script string) (string, error) {
 	// Security: Check script size to prevent DoS attacks
-	if len(script) > maxExternalScriptSize {
-		return "", fmt.Errorf("script size exceeds maximum allowed size (%d bytes)", maxExternalScriptSize)
+	if err := security.ValidateScriptSize(script, security.MaxExternalScriptSize); err != nil {
+		return "", err
 	}
 
 	// Security: The `e.Command` field is sanitized in the constructor (NewExternalEngine),
