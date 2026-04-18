@@ -29,7 +29,12 @@ var (
 	rValueModernRegex  = regexp.MustCompile(`r:\s*'([^']+)'`)
 )
 
-func (s *Scraper) handleChallenge(resp *http.Response) (*http.Response, error) {
+// allowRefresh is threaded through the challenge-solving chain so that a form
+// submission fired from inside refreshSession's probe (allowRefresh=false)
+// cannot re-enter the singleflight group that probe is already holding.
+// User-initiated requests pass allowRefresh=true and keep the original
+// auto-refresh-on-403 behavior.
+func (s *Scraper) handleChallenge(resp *http.Response, allowRefresh bool) (*http.Response, error) {
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -40,25 +45,25 @@ func (s *Scraper) handleChallenge(resp *http.Response) (*http.Response, error) {
 	// Check for modern v2/v3 JS VM challenge first
 	if jsV2DetectRegex.MatchString(bodyStr) {
 		s.logger.Printf("Modern (v2/v3) JavaScript challenge detected. Solving with '%s'...\n", s.opts.JSRuntime)
-		return s.solveModernJSChallenge(resp, bodyStr)
+		return s.solveModernJSChallenge(resp, bodyStr, allowRefresh)
 	}
 
 	// Check for classic lib JS challenge
 	if jsV1DetectRegex.MatchString(bodyStr) {
 		s.logger.Printf("Classic (v1) JavaScript challenge detected. Solving with '%s'...\n", s.opts.JSRuntime)
-		return s.solveClassicJSChallenge(resp.Request.URL, bodyStr)
+		return s.solveClassicJSChallenge(resp.Request.URL, bodyStr, allowRefresh)
 	}
 
 	// Check for Captcha/Turnstile
 	if siteKeyMatch := captchaDetectRegex.FindStringSubmatch(bodyStr); len(siteKeyMatch) > 1 {
 		s.logger.Println("Captcha/Turnstile challenge detected...")
-		return s.solveCaptchaChallenge(resp, bodyStr, siteKeyMatch[1])
+		return s.solveCaptchaChallenge(resp, bodyStr, siteKeyMatch[1], allowRefresh)
 	}
 
 	return nil, errors.ErrUnknownChallenge
 }
 
-func (s *Scraper) solveClassicJSChallenge(originalURL *url.URL, body string) (*http.Response, error) {
+func (s *Scraper) solveClassicJSChallenge(originalURL *url.URL, body string, allowRefresh bool) (*http.Response, error) {
 	time.Sleep(4 * time.Second)
 
 	answer, err := solveV1Logic(body, originalURL.Host, s.jsEngine)
@@ -87,10 +92,10 @@ func (s *Scraper) solveClassicJSChallenge(originalURL *url.URL, body string) (*h
 		"jschl_answer": {answer},
 	}
 
-	return s.submitChallengeForm(fullSubmitURL.String(), originalURL.String(), formData)
+	return s.submitChallengeForm(fullSubmitURL.String(), originalURL.String(), formData, allowRefresh)
 }
 
-func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string) (*http.Response, error) {
+func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string, allowRefresh bool) (*http.Response, error) {
 	answer, err := solveV2Logic(body, resp.Request.URL.Host, s.jsEngine, s.logger)
 	if err != nil {
 		return nil, fmt.Errorf("v2 challenge solver failed: %w", err)
@@ -136,10 +141,10 @@ func (s *Scraper) solveModernJSChallenge(resp *http.Response, body string) (*htt
 		"jschl_answer": {answer},
 	}
 
-	return s.submitChallengeForm(submitURL, resp.Request.URL.String(), formData)
+	return s.submitChallengeForm(submitURL, resp.Request.URL.String(), formData, allowRefresh)
 }
 
-func (s *Scraper) solveCaptchaChallenge(resp *http.Response, body, siteKey string) (*http.Response, error) {
+func (s *Scraper) solveCaptchaChallenge(resp *http.Response, body, siteKey string, allowRefresh bool) (*http.Response, error) {
 	if s.CaptchaSolver == nil {
 		return nil, errors.ErrNoCaptchaSolver
 	}
@@ -168,16 +173,15 @@ func (s *Scraper) solveCaptchaChallenge(resp *http.Response, body, siteKey strin
 		"g-recaptcha-response":  {token},
 	}
 
-	return s.submitChallengeForm(submitURL.String(), resp.Request.URL.String(), formData)
+	return s.submitChallengeForm(submitURL.String(), resp.Request.URL.String(), formData, allowRefresh)
 }
 
-func (s *Scraper) submitChallengeForm(submitURL, refererURL string, formData url.Values) (*http.Response, error) {
+func (s *Scraper) submitChallengeForm(submitURL, refererURL string, formData url.Values, allowRefresh bool) (*http.Response, error) {
 	req, _ := http.NewRequest("POST", submitURL, strings.NewReader(formData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Referer", refererURL)
 
-	// Use the main `do` method to ensure all headers and logic are applied
-	return s.do(req)
+	return s.doWithRefresh(req, allowRefresh)
 }
 
 func (s *Scraper) extractRValue(body string) string {

@@ -22,7 +22,10 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"golang.org/x/net/publicsuffix"
+	"golang.org/x/sync/singleflight"
 )
+
+const refreshSingleflightKey = "session-refresh"
 
 // Scraper is the main struct for making requests.
 type Scraper struct {
@@ -40,7 +43,7 @@ type Scraper struct {
 	sessionStartTime time.Time
 	requestCount     int32
 	last403Time      time.Time
-	in403Retry       bool
+	refresh          singleflight.Group
 }
 
 // New creates a new Scraper instance with the given options.
@@ -155,21 +158,36 @@ func (s *Scraper) Post(url, contentType string, body io.Reader) (*http.Response,
 }
 
 func (s *Scraper) do(req *http.Request) (*http.Response, error) {
-	s.mu.Lock()
-	if s.shouldRefreshSession() {
-		if err := s.refreshSession(req.URL); err != nil {
-			s.logger.Printf("Warning: session refresh failed: %v\n", err)
+	return s.doWithRefresh(req, true)
+}
+
+// doWithRefresh executes req with optional session-refresh and 403-retry behavior.
+// allowRefresh=false is used by refreshSession's own probe to break the
+// do -> refreshSession -> do reentrancy that would otherwise deadlock the mutex
+// and cause singleflight to wait on itself.
+func (s *Scraper) doWithRefresh(req *http.Request, allowRefresh bool) (*http.Response, error) {
+	if allowRefresh {
+		s.mu.Lock()
+		need := s.shouldRefreshSession()
+		s.mu.Unlock()
+		if need {
+			if err := s.coalescedRefresh(req.URL); err != nil {
+				s.logger.Printf("Warning: session refresh failed: %v\n", err)
+			}
 		}
 	}
+
+	s.mu.Lock()
+	ua := s.UserAgent
 	s.mu.Unlock()
 
-	for key, values := range s.UserAgent.Headers {
+	for key, values := range ua.Headers {
 		if req.Header.Get(key) == "" {
 			req.Header[key] = values
 		}
 	}
 
-	s.StealthMode.Apply(req, s.UserAgent.Browser)
+	s.StealthMode.Apply(req, ua.Browser)
 
 	var currentProxy *url.URL
 	var err error
@@ -212,10 +230,10 @@ func (s *Scraper) do(req *http.Request) (*http.Response, error) {
 
 	if isChallengeResponse(resp, bodyBytes) {
 		s.logger.Println("Cloudflare protection detected, attempting to bypass...")
-		return s.handleChallenge(resp)
+		return s.handleChallenge(resp, allowRefresh)
 	}
 
-	if resp.StatusCode == http.StatusForbidden && s.opts.AutoRefreshOn403 {
+	if resp.StatusCode == http.StatusForbidden && s.opts.AutoRefreshOn403 && allowRefresh {
 		return s.handle403(req)
 	}
 
@@ -225,31 +243,30 @@ func (s *Scraper) do(req *http.Request) (*http.Response, error) {
 			return resp, nil
 		}
 		redirectReq, _ := http.NewRequest("GET", loc.String(), nil)
-		return s.do(redirectReq)
+		return s.doWithRefresh(redirectReq, allowRefresh)
 	}
 
 	return resp, nil
 }
 
+// coalescedRefresh ensures concurrent refresh requests collapse into a single
+// upstream probe. All callers receive the leader's result: if the refresh fails,
+// every coalesced caller sees that failure instead of retrying against stale state.
+func (s *Scraper) coalescedRefresh(u *url.URL) error {
+	_, err, _ := s.refresh.Do(refreshSingleflightKey, func() (any, error) {
+		return nil, s.refreshSession(u)
+	})
+	return err
+}
+
 func (s *Scraper) handle403(req *http.Request) (*http.Response, error) {
 	s.mu.Lock()
-	if s.in403Retry {
-		s.mu.Unlock()
-		return nil, errors.ErrMaxRetriesExceeded
-	}
-	s.in403Retry = true
 	s.last403Time = time.Now()
 	s.mu.Unlock()
 
-	defer func() {
-		s.mu.Lock()
-		s.in403Retry = false
-		s.mu.Unlock()
-	}()
-
 	for i := 0; i < s.opts.Max403Retries; i++ {
 		s.logger.Printf("Received 403. Refreshing session (attempt %d/%d)...\n", i+1, s.opts.Max403Retries)
-		if err := s.refreshSession(req.URL); err != nil {
+		if err := s.coalescedRefresh(req.URL); err != nil {
 			return nil, fmt.Errorf("failed to refresh session after 403: %w", err)
 		}
 
@@ -268,26 +285,37 @@ func (s *Scraper) shouldRefreshSession() bool {
 
 func (s *Scraper) refreshSession(currentURL *url.URL) error {
 	s.logger.Println("Refreshing session...")
-	s.sessionStartTime = time.Now()
-	atomic.StoreInt32(&s.requestCount, 0)
 
 	agent, err := useragent.New(s.opts.Browser)
 	if err != nil {
 		return err
 	}
-	s.UserAgent = agent
 
+	s.mu.Lock()
+	s.sessionStartTime = time.Now()
+	atomic.StoreInt32(&s.requestCount, 0)
+	s.UserAgent = agent
 	if s.opts.RotateTlsCiphers {
 		if tr, ok := s.client.Transport.(*transport.CipherSuiteTransport); ok {
-			tr.SetCipherSuites(s.UserAgent.CipherSuites)
+			tr.SetCipherSuites(agent.CipherSuites)
 		}
 	}
-
 	if s.client.Jar != nil {
 		s.client.Jar.SetCookies(currentURL, []*http.Cookie{})
 	}
+	s.mu.Unlock()
 
 	rootURL := &url.URL{Scheme: currentURL.Scheme, Host: currentURL.Host}
-	_, err = s.Get(rootURL.String())
-	return err
+	req, err := http.NewRequest("GET", rootURL.String(), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := s.doWithRefresh(req, false)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("session refresh probe returned 403 from %s", rootURL)
+	}
+	return nil
 }

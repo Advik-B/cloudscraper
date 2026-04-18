@@ -6,6 +6,7 @@ require (
 	github.com/andybalholm/brotli v1.1.1
 	github.com/dop251/goja v0.0.0-20251008123653-cf18d89f3cf6
 	golang.org/x/net v0.41.0
+	golang.org/x/sync v0.15.0
 )
 
 require (
